@@ -21,7 +21,7 @@ public class ProducerConsumer {
 
         @Override
         public void run() {
-            Pattern pattern = Pattern.compile("<img.*src=(\\S*?) ?.*?>");
+            Pattern pattern = Pattern.compile("<img.*?src=(.*?)[ >]");
             Matcher matcher = pattern.matcher(context);
             while (matcher.find()) {
                 System.out.println("producer stack size :" + stack.size());
@@ -66,7 +66,7 @@ public class ProducerConsumer {
                 HttpURLConnection connection = tryConnect(url, 16);
                 File file = new File("src/tmp/"
                         + LocalDateTime.now()
-                        +  url
+                        + url.substring(url.lastIndexOf("."), url.length())
                 );
                 if (! file.exists()) {
                     try {
@@ -89,9 +89,11 @@ public class ProducerConsumer {
                         int index = -1;
                         while ( (index = in.read(buffer) ) != -1) {
                             out.write(buffer,0 , index);
+                            out.flush();
                         }
                     }finally {
                         in.close();
+                        out.close();
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
