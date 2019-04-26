@@ -15,21 +15,23 @@ public class ProducerConsumer {
     private Stack<String> stack = new Stack<>();
     private static String LOCK = "lock";
     private volatile boolean stop = false;
+    private String protocol;
 
     class Producer implements Runnable {
 
 
         @Override
         public void run() {
-            Pattern pattern = Pattern.compile("<img.*?src=(.*?)[ >]");
+//            Pattern pattern = Pattern.compile("<img.*?src=\"(.*?)\"[ >]");
+//            (http|https)?://[^\s]*?(jpg|png)
+            Pattern pattern = Pattern.compile("(http:|https:)?//[^\\s]*?(jpg|png|gif|JPEG|JPG|PNG)");
             Matcher matcher = pattern.matcher(context);
             while (matcher.find()) {
                 System.out.println("producer stack size :" + stack.size());
-                String tmp = matcher.group(1);
+                String tmp = matcher.group(0);
                 System.out.println("url:" + tmp);
                 if (tmp.startsWith("/")) {
-                    stack.push("http:" + tmp);
-                    stack.push("https:" + tmp);
+                    stack.push(protocol + ":" + tmp);
                 }else{
                     stack.push( tmp);
                 }
@@ -38,6 +40,7 @@ public class ProducerConsumer {
                 }
             }
             synchronized (LOCK){
+                stop = true;
                 LOCK.notifyAll();
             }
         }
@@ -48,7 +51,7 @@ public class ProducerConsumer {
 
         @Override
         public void run() {
-            while (true) {
+            while (! stop || ! stack.empty()) {
                 if (stack.empty()) {
                     System.out.println("consumer stack size :" + stack.size());
                     try {
@@ -59,11 +62,14 @@ public class ProducerConsumer {
                         e.printStackTrace();
                     }
                 }
-                if (stop) {
+                if (stop && stack.empty()) {
                     break;
                 }
                 String url = stack.pop();
                 HttpURLConnection connection = tryConnect(url, 16);
+                if (connection == null) {
+                    continue;
+                }
                 File file = new File("src/tmp/"
                         + LocalDateTime.now()
                         + url.substring(url.lastIndexOf("."), url.length())
@@ -105,6 +111,7 @@ public class ProducerConsumer {
 
 
     public void crawler(String url){
+        protocol = url.substring(0, url.indexOf(":"));
         HttpURLConnection connection = tryConnect(url, 16);
         try {
             context = read(connection);
@@ -114,7 +121,9 @@ public class ProducerConsumer {
         System.out.println("context:" + context);
         new Thread(new Producer()).start();
 
-        new Thread(new Consumer()).start();
+        for (int i = 0; i < 32; i++) {
+            new Thread(new Consumer()).start();
+        }
     }
 
     private String read(HttpURLConnection connection) throws IOException {
@@ -139,7 +148,7 @@ public class ProducerConsumer {
         try {
             target = new URL(url);
         } catch (MalformedURLException e) {
-            System.out.println("url格式错误");
+            System.out.println("url格式错误" + url);
             return null;
         }
         while (true) {
@@ -161,13 +170,20 @@ public class ProducerConsumer {
 
 
     public static void main(String[] args) {
-        if (args.length == 0) {
-            System.out.println("Usage:\n" +
-                    "java ProducerConsumer http://example.url");
-        }else{
-            ProducerConsumer producerCosumer = new ProducerConsumer();
-            producerCosumer.crawler(args[0]);
+//        if (args.length == 0) {
+//            System.out.println("Usage:\n" +
+//                    "java ProducerConsumer http://example.url");
+//        }else{
+//            ProducerConsumer producerCosumer = new ProducerConsumer();
+//            producerCosumer.crawler(args[0]);
+//        }
+
+        ProducerConsumer producerConsumer = new ProducerConsumer();
+        producerConsumer.crawler("http://www.zeroorez.net/beauty");
+        for (int i = 2; i <= 1000; i++) {
+            producerConsumer.crawler("http://www.zeroorez.net/beauty?pn=" + i);
         }
+
     }
 
 }
