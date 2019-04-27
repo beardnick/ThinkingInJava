@@ -5,7 +5,6 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -14,7 +13,6 @@ import java.util.regex.Pattern;
 
 public class ProducerConsumer {
 
-    private static String LOCK = "lock";
     private Stack<String> stack = new Stack<>(10);
     private String context;
     private volatile boolean stop = false;
@@ -151,9 +149,9 @@ public class ProducerConsumer {
             Matcher matcher = pattern.matcher(context);
             while (matcher.find()) {
                 while (stack.full()) {
-                    synchronized (LOCK) {
+                    synchronized (stack) {
                         try {
-                            LOCK.wait();
+                            stack.wait();
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
@@ -167,13 +165,13 @@ public class ProducerConsumer {
                 }else{
                     stack.push( tmp);
                 }
-                synchronized (LOCK) {
-                    LOCK.notifyAll();
+                synchronized (stack) {
+                    stack.notifyAll();
                 }
             }
                 stop = true;
-            synchronized (LOCK) {
-                LOCK.notifyAll();
+            synchronized (stack) {
+                stack.notifyAll();
             }
         }
 
@@ -185,14 +183,14 @@ public class ProducerConsumer {
         public void run() {
             while (! stop || ! stack.empty()) {
                 String url = null;
-                synchronized (LOCK) {
+                synchronized (stack) {
                     while (stack.empty()) {
                         if (stop) {
                             break;
                         }
                         System.out.println("consumer stack size :" + stack.size());
                         try {
-                            LOCK.wait();
+                            stack.wait();
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
@@ -201,7 +199,7 @@ public class ProducerConsumer {
                         break;
                     }
                     url = stack.pop();
-                    LOCK.notifyAll();
+                    stack.notifyAll();
                 }
                 HttpURLConnection connection = tryConnect(url, 16);
                 if (connection == null) {
@@ -224,6 +222,7 @@ public class ProducerConsumer {
                      out = new FileOutputStream(file);
                 } catch (FileNotFoundException e) {
                     e.printStackTrace();
+                    continue;
                 }
                 byte[] buffer = new byte[2048];
                 try {
@@ -245,27 +244,5 @@ public class ProducerConsumer {
         }
     }
 
-    class LockProducer implements Runnable {
-
-        @Override
-        public void run() {
-            Matcher matcher = pattern.matcher(context);
-            while (matcher.find()) {
-                String tmp = matcher.group(0);
-                System.out.println("LockProducer url:" +tmp  );
-                if (tmp.startsWith("/")) {
-                    stack.push(protocol + ":" + tmp);
-                }
-            }
-        }
-    }
-
-    class LockConsumer implements  Runnable{
-
-        @Override
-        public void run() {
-
-        }
-    }
 
 }
