@@ -5,110 +5,40 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.LocalDateTime;
-import java.util.Stack;
+import java.util.Objects;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ProducerConsumer {
 
-    private String context;
-    private Stack<String> stack = new Stack<>();
     private static String LOCK = "lock";
+    private Stack<String> stack = new Stack<>(10);
+    private String context;
     private volatile boolean stop = false;
     private String protocol;
+    private Pattern pattern = Pattern.compile("(http:|https:)?//[^\\s]*?(jpg|png|gif|JPEG|JPG|PNG)");
+    private Lock lock = new ReentrantLock();
+    private final Condition notFull = lock.newCondition();
+    private final Condition notEmpty = lock.newCondition();
 
-    class Producer implements Runnable {
+    public static void main(String[] args) {
+//        if (args.length == 0) {
+//            System.out.println("Usage:\n" +
+//                    "java ProducerConsumer http://example.url");
+//        }else{
+//            ProducerConsumer producerCosumer = new ProducerConsumer();
+//            producerCosumer.crawler(args[0]);
+//        }
 
-
-        @Override
-        public void run() {
-//            Pattern pattern = Pattern.compile("<img.*?src=\"(.*?)\"[ >]");
-//            (http|https)?://[^\s]*?(jpg|png)
-            Pattern pattern = Pattern.compile("(http:|https:)?//[^\\s]*?(jpg|png|gif|JPEG|JPG|PNG)");
-            Matcher matcher = pattern.matcher(context);
-            while (matcher.find()) {
-                System.out.println("producer stack size :" + stack.size());
-                String tmp = matcher.group(0);
-                System.out.println("url:" + tmp);
-                if (tmp.startsWith("/")) {
-                    stack.push(protocol + ":" + tmp);
-                }else{
-                    stack.push( tmp);
-                }
-                synchronized (LOCK){
-                    LOCK.notifyAll();
-                }
-            }
-            synchronized (LOCK){
-                stop = true;
-                LOCK.notifyAll();
-            }
+        ProducerConsumer producerConsumer = new ProducerConsumer();
+        for (int i = 1; i <= 11; i++) {
+            producerConsumer.crawler("http://www.haopic.me/meinv/page/" + i);
         }
 
     }
-
-    class Consumer implements Runnable {
-
-        @Override
-        public void run() {
-            while (! stop || ! stack.empty()) {
-                if (stack.empty()) {
-                    System.out.println("consumer stack size :" + stack.size());
-                    try {
-                        synchronized (LOCK) {
-                            LOCK.wait();
-                        }
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-                if (stop && stack.empty()) {
-                    break;
-                }
-                String url = stack.pop();
-                HttpURLConnection connection = tryConnect(url, 16);
-                if (connection == null) {
-                    continue;
-                }
-                File file = new File("src/tmp/"
-                        + LocalDateTime.now()
-                        + url.substring(url.lastIndexOf("."), url.length())
-                );
-                if (! file.exists()) {
-                    try {
-                        file.createNewFile();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                FileOutputStream out = null;
-                System.out.println("begin to download " + url);
-                try {
-                     out = new FileOutputStream(file);
-                } catch (FileNotFoundException e) {
-                    e.printStackTrace();
-                }
-                byte[] buffer = new byte[2048];
-                try {
-                    InputStream in = connection.getInputStream();
-                    try {
-                        int index = -1;
-                        while ( (index = in.read(buffer) ) != -1) {
-                            out.write(buffer,0 , index);
-                            out.flush();
-                        }
-                    }finally {
-                        in.close();
-                        out.close();
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
-
-
 
     public void crawler(String url){
         protocol = url.substring(0, url.indexOf(":"));
@@ -168,22 +98,174 @@ public class ProducerConsumer {
         return  connection;
     }
 
+    private  static class Stack<T>{
+        private  Object[] elements;
+        private int top = -1;
 
-    public static void main(String[] args) {
-//        if (args.length == 0) {
-//            System.out.println("Usage:\n" +
-//                    "java ProducerConsumer http://example.url");
-//        }else{
-//            ProducerConsumer producerCosumer = new ProducerConsumer();
-//            producerCosumer.crawler(args[0]);
-//        }
-
-        ProducerConsumer producerConsumer = new ProducerConsumer();
-        producerConsumer.crawler("http://www.zeroorez.net/beauty");
-        for (int i = 2; i <= 1000; i++) {
-            producerConsumer.crawler("http://www.zeroorez.net/beauty?pn=" + i);
+        public Stack(int cap) {
+            elements = new Object[cap];
         }
 
+
+        public synchronized T  push(T e) {
+            if (top  + 1 >= elements.length) {
+                throw new IndexOutOfBoundsException();
+            }
+            elements[++top] = e;
+            return e;
+        }
+
+        public synchronized T pop() {
+            if (top < 0) {
+                throw new IndexOutOfBoundsException();
+            }
+            Object e = elements[top];
+            elements[top --] = null;
+            return (T) e;
+        }
+
+        public synchronized boolean empty() {
+            return top == -1;
+        }
+
+        public synchronized int size() {
+            return top + 1;
+        }
+
+        public synchronized boolean full() {
+            return top == elements.length  -1 ;
+        }
+
+    }
+
+    /**
+     * waite和notify实现生产者消费者模型
+     */
+    class Producer implements Runnable {
+
+
+        @Override
+        public void run() {
+//            Pattern pattern = Pattern.compile("<img.*?src=\"(.*?)\"[ >]");
+//            (http|https)?://[^\s]*?(jpg|png)
+            Matcher matcher = pattern.matcher(context);
+            while (matcher.find()) {
+                while (stack.full()) {
+                    synchronized (LOCK) {
+                        try {
+                            LOCK.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+                System.out.println("producer stack size :" + stack.size());
+                String tmp = matcher.group(0);
+                System.out.println("url:" + tmp);
+                if (tmp.startsWith("/")) {
+                    stack.push(protocol + ":" + tmp);
+                }else{
+                    stack.push( tmp);
+                }
+                synchronized (LOCK) {
+                    LOCK.notifyAll();
+                }
+            }
+                stop = true;
+            synchronized (LOCK) {
+                LOCK.notifyAll();
+            }
+        }
+
+    }
+
+    class Consumer implements Runnable {
+
+        @Override
+        public void run() {
+            while (! stop || ! stack.empty()) {
+                String url = null;
+                synchronized (LOCK) {
+                    while (stack.empty()) {
+                        if (stop) {
+                            break;
+                        }
+                        System.out.println("consumer stack size :" + stack.size());
+                        try {
+                            LOCK.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    if (stack.empty() && stop) {
+                        break;
+                    }
+                    url = stack.pop();
+                    LOCK.notifyAll();
+                }
+                HttpURLConnection connection = tryConnect(url, 16);
+                if (connection == null) {
+                    continue;
+                }
+                File file = new File("src/tmp/"
+                        + LocalDateTime.now()
+                        + url.substring(url.lastIndexOf("."), url.length())
+                );
+                if (! file.exists()) {
+                    try {
+                        file.createNewFile();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+                FileOutputStream out = null;
+                System.out.println("begin to download " + url);
+                try {
+                     out = new FileOutputStream(file);
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                }
+                byte[] buffer = new byte[2048];
+                try {
+                    InputStream in = connection.getInputStream();
+                    try {
+                        int index = -1;
+                        while ( (index = in.read(buffer) ) != -1) {
+                            out.write(buffer,0 , index);
+                            out.flush();
+                        }
+                    }finally {
+                        in.close();
+                        out.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    class LockProducer implements Runnable {
+
+        @Override
+        public void run() {
+            Matcher matcher = pattern.matcher(context);
+            while (matcher.find()) {
+                String tmp = matcher.group(0);
+                System.out.println("LockProducer url:" +tmp  );
+                if (tmp.startsWith("/")) {
+                    stack.push(protocol + ":" + tmp);
+                }
+            }
+        }
+    }
+
+    class LockConsumer implements  Runnable{
+
+        @Override
+        public void run() {
+
+        }
     }
 
 }
