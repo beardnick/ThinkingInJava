@@ -32,8 +32,9 @@ public class ProducerConsumer {
 //        }
 
         ProducerConsumer producerConsumer = new ProducerConsumer();
-        for (int i = 1; i <= 11; i++) {
-            producerConsumer.crawler("http://www.haopic.me/meinv/page/" + i);
+        for (int i = 1; i <= 100; i++) {
+//            producerConsumer.crawler("http://www.haopic.me/meinv/page/" + i);
+            producerConsumer.crawler("https://pixabay.com/zh/photos/search/%E6%80%A7%E6%84%9F/?pagi=" + i);
         }
 
     }

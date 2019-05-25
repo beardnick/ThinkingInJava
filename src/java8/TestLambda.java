@@ -1,10 +1,7 @@
 package java8;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Stream;
 
 public class TestLambda {
@@ -15,6 +12,14 @@ public class TestLambda {
     }
 
     public static void main(String[] args) {
+        TreeSet<Tuple> set = new TreeSet<>((e1, e2) -> e1.second - e2.second);
+        set.add(new Tuple(1, 3));
+        set.add(new Tuple(9, 4));
+        set.add(new Tuple(2 , 3));
+        set.add(new Tuple(1, -1));
+
+        System.out.println(set);
+
         List<Integer> list = Arrays.asList(1, 2, 5, 4, 6, 2, 12);
         list.sort(
                 (e1, e2) -> e1.compareTo(e2)
